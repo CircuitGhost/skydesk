@@ -129,14 +129,29 @@ void setup() {
     delay(800);
 
     cardTimerStart = millis();
-    configTzTime("EST5EDT,M3.2.0,M11.1.0", "pool.ntp.org", "time.nist.gov");
+    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
 }
 
 void loop() {
     time_t nowTime = time(NULL);
     if (nowTime < 100000) {
         nowTime = 1715000000; // Fallback epoch if NTP syncing
-    } else if (nowTime > 1700000000) {
+    }
+
+    AppNetworkManager::checkWiFiStatus();
+    if (millis() > 1500 && (millis() - lastFetchTime > 300000 || lastFetchTime == 0)) {
+        if (WiFi.status() == WL_CONNECTED) {
+            lastFetchTime = millis();
+            currentWeather = AppNetworkManager::fetchWeather();
+            currentSpaceWeather = AppNetworkManager::fetchSpaceWeather();
+            if (currentWeather.hasUtcOffset) {
+                configTime(currentWeather.utcOffsetSec, 0, "pool.ntp.org", "time.nist.gov");
+                nowTime = time(NULL);
+            }
+        }
+    }
+
+    if (nowTime > 1700000000) {
         static bool loggedAstro = false;
         if (!loggedAstro) {
             loggedAstro = true;
@@ -146,16 +161,6 @@ void loop() {
                           s.sunriseMin / 60, s.sunriseMin % 60,
                           s.sunsetMin / 60, s.sunsetMin % 60,
                           m.riseMin, m.setMin);
-        }
-    }
-
-    // Wi-Fi background check & data refresh every 5 minutes
-    AppNetworkManager::checkWiFiStatus();
-    if (millis() > 1500 && (millis() - lastFetchTime > 300000 || lastFetchTime == 0)) {
-        if (WiFi.status() == WL_CONNECTED) {
-            lastFetchTime = millis();
-            currentWeather = AppNetworkManager::fetchWeather();
-            currentSpaceWeather = AppNetworkManager::fetchSpaceWeather();
         }
     }
 
@@ -523,7 +528,7 @@ void renderRadarCard(time_t nowTime) {
     screen->setCursor(20, 250);
     screen->print("GPS & GLONASS Overhead");
     screen->setCursor(20, 270);
-    screen->print("Orbit Model: TLE SGP4");
+    screen->print("Simulated skyplot");
     screen->setTextColor(COLOR_GRAY);
     screen->setCursor(20, 285);
     screen->print("Constellation: Active");

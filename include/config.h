@@ -1,13 +1,15 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include "secrets.h"
+#if __has_include("user_config.h")
+#include "user_config.h"
+#else
+#error Copy include/user_config.example.h to include/user_config.h and set Wi-Fi plus your city lat/lon
+#endif
 
-// --- Location Settings (Youngstown, Ohio) ---
-#define LOCATION_NAME   "Youngstown, OH"
-#define LATITUDE        41.0998f
-#define LONGITUDE       -80.6495f
-#define TIMEZONE_OFFSET -4 // Eastern Daylight Time (UTC -4)
+#ifndef WIFI_SSID
+#error WIFI_SSID is missing. Copy include/user_config.example.h to include/user_config.h
+#endif
 
 // --- Waveshare ESP32-C6 1.47" LCD Pin Mapping ---
 #define LCD_MOSI        6

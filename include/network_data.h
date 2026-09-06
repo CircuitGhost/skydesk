@@ -18,6 +18,8 @@ struct WeatherData {
     float uvIndex;
     String conditionText;
     bool isValid;
+    int utcOffsetSec;
+    bool hasUtcOffset;
 };
 
 struct SpaceWeatherData {
@@ -52,11 +54,15 @@ public:
     }
 
     static WeatherData fetchWeather() {
-        WeatherData data = { 72.0f, 78.0f, 62.0f, 55, 8.5f, 1, 4.2f, "Partly Cloudy", false };
+        WeatherData data = { 72.0f, 78.0f, 62.0f, 55, 8.5f, 1, 4.2f, "Partly Cloudy", false, 0, false };
         String payload;
-        if (!httpGet(
-                "https://api.open-meteo.com/v1/forecast?latitude=41.0998&longitude=-80.6495&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,uv_index_max&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FNew_York&forecast_days=1",
-                payload)) {
+        String url = String("https://api.open-meteo.com/v1/forecast?latitude=") +
+                     String(LATITUDE, 4) + "&longitude=" + String(LONGITUDE, 4) +
+                     "&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m" +
+                     "&daily=temperature_2m_max,temperature_2m_min,uv_index_max" +
+                     "&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto" +
+                     "&forecast_days=1";
+        if (!httpGet(url.c_str(), payload)) {
             return data;
         }
 
@@ -75,8 +81,11 @@ public:
         data.tempLowF = doc["daily"]["temperature_2m_min"][0] | 62.0f;
         data.uvIndex = doc["daily"]["uv_index_max"][0] | 4.2f;
         data.conditionText = getWeatherConditionText(data.weatherCode);
+        data.utcOffsetSec = doc["utc_offset_seconds"] | 0;
+        data.hasUtcOffset = true;
         data.isValid = true;
-        Serial.printf("Weather OK: %.0f F %s\n", data.tempF, data.conditionText.c_str());
+        Serial.printf("Weather OK: %.0f F %s (UTC%+d)\n", data.tempF, data.conditionText.c_str(),
+                      data.utcOffsetSec / 3600);
         return data;
     }
 
