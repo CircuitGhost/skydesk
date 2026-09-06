@@ -30,6 +30,6 @@
 
 // --- UI Settings ---
 #define CARD_DURATION_MS 10800 // ~10.8s per card (35% slower than 8s)
-#define NUM_CARDS        6
+#define NUM_CARDS        8
 
 #endif // CONFIG_H

@@ -50,6 +50,8 @@ If the backlight comes on but the screen stays black, the flash did not take —
 1. Clock with sunrise, sunset, moonrise, moonset
 2. Lunar calendar
 3. Sun and golden hour
-4. GNSS skyplot (drawn for fun — this board has no GPS chip)
-5. Local weather
-6. ISS distance and NOAA Kp index
+4. Visible planets (Venus, Mars, Jupiter, Saturn)
+5. Stargazing score
+6. GNSS skyplot (drawn for fun — this board has no GPS chip)
+7. Local weather
+8. ISS distance and NOAA Kp index

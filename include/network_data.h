@@ -20,6 +20,7 @@ struct WeatherData {
     bool isValid;
     int utcOffsetSec;
     bool hasUtcOffset;
+    int cloudCover; // 0-100
 };
 
 struct SpaceWeatherData {
@@ -54,11 +55,11 @@ public:
     }
 
     static WeatherData fetchWeather() {
-        WeatherData data = { 72.0f, 78.0f, 62.0f, 55, 8.5f, 1, 4.2f, "Partly Cloudy", false, 0, false };
+        WeatherData data = { 72.0f, 78.0f, 62.0f, 55, 8.5f, 1, 4.2f, "Partly Cloudy", false, 0, false, 40 };
         String payload;
         String url = String("https://api.open-meteo.com/v1/forecast?latitude=") +
                      String(LATITUDE, 4) + "&longitude=" + String(LONGITUDE, 4) +
-                     "&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m" +
+                     "&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,cloud_cover" +
                      "&daily=temperature_2m_max,temperature_2m_min,uv_index_max" +
                      "&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto" +
                      "&forecast_days=1";
@@ -80,6 +81,7 @@ public:
         data.tempHighF = doc["daily"]["temperature_2m_max"][0] | 78.0f;
         data.tempLowF = doc["daily"]["temperature_2m_min"][0] | 62.0f;
         data.uvIndex = doc["daily"]["uv_index_max"][0] | 4.2f;
+        data.cloudCover = doc["current"]["cloud_cover"] | 40;
         data.conditionText = getWeatherConditionText(data.weatherCode);
         data.utcOffsetSec = doc["utc_offset_seconds"] | 0;
         data.hasUtcOffset = true;

@@ -50,6 +50,8 @@ void drawProgressBar(float progress);
 void renderClockCard();
 void renderMoonCard(time_t nowTime);
 void renderSunCard(time_t nowTime);
+void renderPlanetCard(time_t nowTime);
+void renderStargazingCard(time_t nowTime);
 void renderRadarCard(time_t nowTime);
 void renderWeatherCard();
 void renderSpaceWeatherCard();
@@ -184,9 +186,11 @@ void loop() {
         case 0: renderClockCard(); break;
         case 1: renderMoonCard(nowTime); break;
         case 2: renderSunCard(nowTime); break;
-        case 3: renderRadarCard(nowTime); break;
-        case 4: renderWeatherCard(); break;
-        case 5: renderSpaceWeatherCard(); break;
+        case 3: renderPlanetCard(nowTime); break;
+        case 4: renderStargazingCard(nowTime); break;
+        case 5: renderRadarCard(nowTime); break;
+        case 6: renderWeatherCard(); break;
+        case 7: renderSpaceWeatherCard(); break;
     }
 
     // Render Bottom Progress Bar
@@ -479,7 +483,141 @@ void renderSunCard(time_t nowTime) {
     screen->printf("Elev: %+.1f deg", sun.currentElevation);
 }
 
-// --- CARD 3: GNSS SATELLITE RADAR GRAPHICS ---
+static const char *compassFromAz(float az) {
+    static const char *dirs[] = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"};
+    int idx = (int)((az + 22.5f) / 45.0f) % 8;
+    if (idx < 0) idx += 8;
+    return dirs[idx];
+}
+
+struct StarScore {
+    int score;
+    const char *label;
+    const char *advice;
+};
+
+StarScore computeStarScore(time_t nowTime) {
+    StarScore s = {0, "DAYLIGHT", "Wait until after sunset"};
+    SunInfo sun = AstronomyEngine::getSunInfo(nowTime, LATITUDE, LONGITUDE);
+    int code = currentWeather.weatherCode;
+    bool precip = (code >= 51 && code <= 67) || (code >= 71 && code <= 82) || (code >= 95);
+    bool fog = (code == 45 || code == 48);
+
+    if (sun.isDaylight) {
+        return s;
+    }
+    if (precip) {
+        s.score = 1;
+        s.label = "WASHED OUT";
+        s.advice = "Rain or snow in the way";
+        return s;
+    }
+    if (fog) {
+        s.score = 1;
+        s.label = "FOG";
+        s.advice = "Wait for it to lift";
+        return s;
+    }
+
+    MoonInfo moon = AstronomyEngine::getMoonInfo(nowTime);
+    float penalty = (currentWeather.cloudCover / 25.0f) + (moon.illumination * 2.0f);
+    int score = (int)lroundf(constrain(5.0f - penalty, 1.0f, 5.0f));
+    s.score = score;
+    if (score >= 5) { s.label = "EXCELLENT"; s.advice = "Dark and clear — look up"; }
+    else if (score == 4) { s.label = "GOOD"; s.advice = "Worth a look outside"; }
+    else if (score == 3) { s.label = "FAIR"; s.advice = "Bright moon or some cloud"; }
+    else if (score == 2) { s.label = "POOR"; s.advice = "Tough night for stars"; }
+    else { s.label = "VERY POOR"; s.advice = "Wait for a darker sky"; }
+    return s;
+}
+
+// --- CARD 4: NAKED-EYE PLANETS ---
+void renderPlanetCard(time_t nowTime) {
+    drawHeader("VISIBLE PLANETS");
+
+    PlanetInfo planets[4];
+    int n = AstronomyEngine::getNakedEyePlanets(nowTime, LATITUDE, LONGITUDE, planets, 4);
+
+    int upCount = 0;
+    for (int i = 0; i < n; i++) {
+        if (planets[i].isUp) upCount++;
+        int y = 38 + i * 58;
+        screen->fillRoundRect(10, y, SCREEN_WIDTH - 20, 52, 8, COLOR_CARD_BG);
+        screen->setTextSize(1);
+        screen->setTextColor(COLOR_CYAN);
+        screen->setCursor(20, y + 8);
+        screen->print(planets[i].name);
+
+        screen->setTextColor(planets[i].isUp ? COLOR_GOLD : COLOR_GRAY);
+        screen->setCursor(20, y + 24);
+        if (planets[i].isUp) {
+            screen->printf("UP  %+.0f deg  %s", planets[i].alt, compassFromAz(planets[i].az));
+        } else {
+            screen->printf("Down  %+.0f deg", planets[i].alt);
+        }
+    }
+
+    screen->setTextColor(COLOR_GRAY);
+    screen->setTextSize(1);
+    screen->setCursor(14, 278);
+    screen->printf("%d of 4 above the horizon", upCount);
+}
+
+// --- CARD 5: STARGAZING SCORE ---
+void renderStargazingCard(time_t nowTime) {
+    drawHeader("STARGAZING");
+
+    StarScore score = computeStarScore(nowTime);
+    MoonInfo moon = AstronomyEngine::getMoonInfo(nowTime);
+
+    uint16_t scoreColor = COLOR_GRAY;
+    if (score.score >= 4) scoreColor = COLOR_GREEN;
+    else if (score.score == 3) scoreColor = COLOR_GOLD;
+    else if (score.score >= 1) scoreColor = COLOR_ORANGE;
+
+    screen->setTextColor(scoreColor);
+    screen->setTextSize(5);
+    if (score.score <= 0) {
+        screen->setTextSize(3);
+        screen->setCursor(28, 50);
+        screen->print("DAY");
+    } else {
+        screen->setCursor(64, 48);
+        screen->print(score.score);
+    }
+
+    screen->setTextSize(1);
+    screen->setTextColor(COLOR_TEXT);
+    screen->setCursor(20, 100);
+    screen->print(score.label);
+    screen->setTextColor(COLOR_CYAN);
+    screen->setCursor(20, 118);
+    screen->print(score.advice);
+
+    screen->fillRoundRect(10, 145, SCREEN_WIDTH - 20, 148, 8, COLOR_CARD_BG);
+    screen->setTextColor(COLOR_TEXT);
+    screen->setCursor(20, 160);
+    screen->printf("Clouds     %d%%", currentWeather.cloudCover);
+    screen->fillRect(20, 176, 132, 8, 0x2104);
+    screen->fillRect(20, 176, constrain((currentWeather.cloudCover * 132) / 100, 0, 132), 8, COLOR_CYAN);
+
+    screen->setCursor(20, 198);
+    screen->printf("Moon       %.0f%% lit", moon.illumination * 100.0f);
+    screen->fillRect(20, 214, 132, 8, 0x2104);
+    screen->fillRect(20, 214, constrain((int)(moon.illumination * 132), 0, 132), 8, COLOR_GOLD);
+
+    screen->setCursor(20, 236);
+    screen->printf("Kp index   %.1f", currentSpaceWeather.kpIndex);
+    screen->fillRect(20, 252, 132, 8, 0x2104);
+    screen->fillRect(20, 252, constrain((int)((currentSpaceWeather.kpIndex / 9.0f) * 132), 0, 132), 8,
+                     currentSpaceWeather.kpIndex >= 5.0f ? COLOR_PURPLE : COLOR_GREEN);
+
+    screen->setTextColor(COLOR_GRAY);
+    screen->setCursor(20, 272);
+    screen->print(LOCATION_NAME);
+}
+
+// --- CARD 6: GNSS SATELLITE RADAR GRAPHICS ---
 void renderRadarCard(time_t nowTime) {
     drawHeader("GNSS SATELLITE RADAR");
 
@@ -671,6 +809,13 @@ void updateRGBColor() {
     }
 
     SunInfo sun = AstronomyEngine::getSunInfo(now, LATITUDE, LONGITUDE);
+    if (!sun.isDaylight) {
+        StarScore seeing = computeStarScore(now);
+        if (seeing.score >= 4) {
+            setRgb(170, 200, 255);
+            return;
+        }
+    }
     if (sun.isGoldenHour) {
         setRgb(255, 140, 25);
     } else if (sun.isDaylight) {

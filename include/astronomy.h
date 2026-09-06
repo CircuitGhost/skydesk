@@ -30,6 +30,13 @@ struct MoonTimes {
     int setMin;
 };
 
+struct PlanetInfo {
+    const char *name;
+    float alt; // degrees, negative = below horizon
+    float az;  // 0 = north, clockwise
+    bool isUp;
+};
+
 struct SatPos {
     int prn;
     float az;  // Azimuth 0..360
@@ -193,6 +200,24 @@ public:
         return count;
     }
 
+    static int getNakedEyePlanets(time_t epochTime, float lat, float lon, PlanetInfo out[], int maxN) {
+        const int nPlanets = 4;
+        static const char *names[nPlanets] = { "Venus", "Mars", "Jupiter", "Saturn" };
+        int count = 0;
+        for (int i = 0; i < nPlanets && count < maxN; i++) {
+            double ra, dec;
+            planetRaDec(epochTime, i, &ra, &dec);
+            float alt, az;
+            raDecToAltAz(epochTime, ra, dec, lat, lon, &alt, &az);
+            out[count].name = names[i];
+            out[count].alt = alt;
+            out[count].az = az;
+            out[count].isUp = alt > 0.0f;
+            count++;
+        }
+        return count;
+    }
+
 private:
     static int utcEventToLocalMin(time_t epochTime, float utcMinFromMidnight) {
         struct tm utcTm = {};
@@ -241,6 +266,13 @@ private:
     static float moonElevationDeg(time_t t, float lat, float lon) {
         double ra, dec;
         moonRaDec(t, &ra, &dec);
+        float alt, az;
+        raDecToAltAz(t, ra, dec, lat, lon, &alt, &az);
+        (void)az;
+        return alt;
+    }
+
+    static void raDecToAltAz(time_t t, double ra, double dec, float lat, float lon, float *alt, float *az) {
         const double J2000 = 946728000.0;
         double d = ((double)t - J2000) / 86400.0;
         double gmst = fmod(18.697374558 + 24.06570982441908 * d, 24.0);
@@ -250,7 +282,93 @@ private:
         double ha = lstHours * 15.0 * M_PI / 180.0 - ra;
         double latR = lat * M_PI / 180.0;
         double sinEl = sin(latR) * sin(dec) + cos(latR) * cos(dec) * cos(ha);
-        return (float)(asin(constrain(sinEl, -1.0, 1.0)) * 180.0 / M_PI);
+        *alt = (float)(asin(constrain(sinEl, -1.0, 1.0)) * 180.0 / M_PI);
+        double azR = atan2(sin(ha), cos(ha) * sin(latR) - tan(dec) * cos(latR));
+        double azDeg = azR * 180.0 / M_PI + 180.0;
+        if (azDeg < 0) azDeg += 360.0;
+        if (azDeg >= 360.0) azDeg -= 360.0;
+        *az = (float)azDeg;
+    }
+
+    // Schlyter-style compact orbits; index 0 Venus .. 3 Saturn
+    static void planetRaDec(time_t t, int index, double *ra, double *dec) {
+        double d = ((double)t - 946728000.0) / 86400.0 + 1.5;
+        double sunX, sunY, sunZ;
+        bodyHelio(d, -1, &sunX, &sunY, &sunZ);
+
+        double xh, yh, zh;
+        bodyHelio(d, index, &xh, &yh, &zh);
+        // Schlyter: bodyHelio(-1) is the geocentric Sun (Earth→Sun),
+        // so geocentric planet = heliocentric planet + geocentric Sun.
+        double xg = xh + sunX;
+        double yg = yh + sunY;
+        double zg = zh + sunZ;
+
+        double lon = atan2(yg, xg);
+        double hyp = sqrt(xg * xg + yg * yg);
+        double latp = atan2(zg, hyp);
+        double eps = (23.4393 - 3.563E-7 * d) * M_PI / 180.0;
+        *ra = atan2(sin(lon) * cos(eps) - tan(latp) * sin(eps), cos(lon));
+        *dec = asin(sin(latp) * cos(eps) + cos(latp) * sin(eps) * sin(lon));
+    }
+
+    static void bodyHelio(double d, int index, double *xh, double *yh, double *zh) {
+        // N, i, w, a, e, M  (degrees / AU / deg per day) — Schlyter 2000
+        double N, i, w, a, e, M;
+        if (index < 0) { // Sun / Earth orbit
+            N = 0.0;
+            i = 0.0;
+            w = 282.9404 + 4.70935E-5 * d;
+            a = 1.0;
+            e = 0.016709 - 1.151E-9 * d;
+            M = 356.0470 + 0.9856002585 * d;
+        } else if (index == 0) { // Venus
+            N = 76.6799 + 2.46590E-5 * d;
+            i = 3.3946 + 2.75E-8 * d;
+            w = 54.8910 + 1.38374E-5 * d;
+            a = 0.723330;
+            e = 0.006773 - 1.302E-9 * d;
+            M = 48.0052 + 1.6021302244 * d;
+        } else if (index == 1) { // Mars
+            N = 49.5574 + 2.11081E-5 * d;
+            i = 1.8497 - 1.78E-8 * d;
+            w = 286.5016 + 2.92961E-5 * d;
+            a = 1.523688;
+            e = 0.093405 + 2.516E-9 * d;
+            M = 18.6021 + 0.5240207766 * d;
+        } else if (index == 2) { // Jupiter
+            N = 100.4542 + 2.76854E-5 * d;
+            i = 1.3030 - 1.557E-7 * d;
+            w = 273.8777 + 1.64505E-5 * d;
+            a = 5.20256;
+            e = 0.048498 + 4.469E-9 * d;
+            M = 19.8950 + 0.0830853001 * d;
+        } else { // Saturn
+            N = 113.6634 + 2.38980E-5 * d;
+            i = 2.4886 - 1.081E-7 * d;
+            w = 339.3939 + 2.97661E-5 * d;
+            a = 9.55475;
+            e = 0.055546 - 9.499E-9 * d;
+            M = 316.9670 + 0.0334442282 * d;
+        }
+
+        N = wrap360(N) * M_PI / 180.0;
+        i = i * M_PI / 180.0;
+        w = wrap360(w) * M_PI / 180.0;
+        M = wrap360(M) * M_PI / 180.0;
+
+        double E = M;
+        for (int k = 0; k < 6; k++) {
+            E = M + e * sin(E);
+        }
+        double xv = a * (cos(E) - e);
+        double yv = a * sqrt(1.0 - e * e) * sin(E);
+        double v = atan2(yv, xv);
+        double r = sqrt(xv * xv + yv * yv);
+        double vw = v + w;
+        *xh = r * (cos(N) * cos(vw) - sin(N) * sin(vw) * cos(i));
+        *yh = r * (sin(N) * cos(vw) + cos(N) * sin(vw) * cos(i));
+        *zh = r * (sin(vw) * sin(i));
     }
 };
 
